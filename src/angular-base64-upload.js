@@ -156,6 +156,7 @@
               _minsize(newVal);
               _maxnum(newVal);
               _minnum(newVal);
+              _maxdim(newVal);
               _accept(newVal);
           }
 
@@ -264,6 +265,43 @@
                 valid = regExp.test(val.filetype) || regExp.test(fileExt);
               }
               ngModel.$setValidity('accept', valid);
+            }
+
+            return val;
+          }
+
+          function _maxdim(val) {
+            var valid = true;
+
+            if (attrs.maxdim && val) {
+              var dimensions = attrs.maxdim;
+
+              var max_width = dimensions.width, max_height = dimensions.height;
+              var img = new Image();
+              if (attrs.multiple) {
+                for (var i = 0; i < val.length; i++) {
+                  var file = val[i];
+                  img.src = "data:" + file.filetype + ';base64,' + file.base64;
+                  if (max_width && img.width > max_width) {
+                    valid = false;
+                    break;
+                  }
+                  if (max_height && img.height > max_width) {
+                    valid = false;
+                    break;
+                  }
+                }
+              } else {
+                  img.src = "data:" + val.filetype + ';base64,' + val.base64;
+                  if (max_width && img.width > max_width) {
+                    valid = false;
+                  }
+                  if (max_height && img.height > max_height) {
+                    valid = false;
+                  }
+                }
+            
+              ngModel.$setValidity('maxdim', valid);
             }
 
             return val;
