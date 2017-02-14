@@ -82,7 +82,7 @@
               fileObject.filetype = file.type;
               fileObject.filename = file.name;
               fileObject.filesize = file.size;
-              
+
               _attachEventHandlers(reader, file, fileObject);
               reader.readAsArrayBuffer(file);
             }
@@ -184,7 +184,7 @@
             _minsize(newVal);
             _maxnum(newVal);
             _minnum(newVal);
-              _maxdim(newVal);
+            _fixeddim(newVal);
             _accept(newVal);
           }
 
@@ -296,38 +296,48 @@
             return val;
           }
 
-          function _maxdim(val) {
+          function _fixeddim(val) {
             var valid = true;
 
-            if (attrs.maxdim && val) {
-              var dimensions = attrs.maxdim;
+            if (attrs.fixeddim && val) {
+              var dimensions = angular
+                  .fromJson(attrs.fixeddim);
 
-              var max_width = dimensions.width, max_height = dimensions.height;
               var img = new Image();
               if (attrs.multiple) {
                 for (var i = 0; i < val.length; i++) {
                   var file = val[i];
-                  img.src = "data:" + file.filetype + ';base64,' + file.base64;
-                  if (max_width && img.width > max_width) {
+                  img.src = "data:" +
+                      file.filetype +
+                      ';base64,' +
+                      file.base64;
+                  if (dimensions.width &&
+                      img.width !==  dimensions.width) {
                     valid = false;
                     break;
                   }
-                  if (max_height && img.height > max_width) {
+                  if (dimensions.height &&
+                      img.height !==  dimensions.height) {
                     valid = false;
                     break;
                   }
                 }
               } else {
-                  img.src = "data:" + val.filetype + ';base64,' + val.base64;
-                  if (max_width && img.width > max_width) {
-                    valid = false;
-                  }
-                  if (max_height && img.height > max_height) {
-                    valid = false;
-                  }
+                img.src = "data:" +
+                     val.filetype +
+                     ';base64,' +
+                     val.base64;
+                if (dimensions.width &&
+                    img.width !== dimensions.width) {
+                  valid = false;
                 }
-            
-              ngModel.$setValidity('maxdim', valid);
+                if (dimensions.height &&
+                    img.height !== dimensions.height) {
+                  valid = false;
+                }
+              }
+
+              ngModel.$setValidity('fixeddim', valid);
             }
 
             return val;
