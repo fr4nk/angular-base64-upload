@@ -1,16 +1,16 @@
-(function (window, undefined) {
+(function(window, undefined) {
 
   'use strict';
 
   /* istanbul ignore next */
-  window._arrayBufferToBase64 = function ( buffer ) { //http://stackoverflow.com/questions/9267899/arraybuffer-to-base64-encoded-string
+  window._arrayBufferToBase64 = function(buffer) { //http://stackoverflow.com/questions/9267899/arraybuffer-to-base64-encoded-string
     var binary = '';
-    var bytes = new Uint8Array( buffer );
+    var bytes = new Uint8Array(buffer);
     var len = bytes.byteLength;
     for (var i = 0; i < len; i++) {
-        binary += String.fromCharCode( bytes[ i ] );
+      binary += String.fromCharCode(bytes[i]);
     }
-    return window.btoa( binary );
+    return window.btoa(binary);
   };
 
 
@@ -19,7 +19,7 @@
   mod.directive('baseSixtyFourInput', [
     '$window',
     '$q',
-    function ($window, $q) {
+    function($window, $q) {
 
       var isolateScope = {
         onChange: '&',
@@ -37,7 +37,7 @@
         restrict: 'A',
         require: 'ngModel',
         scope: isolateScope,
-        link: function (scope, elem, attrs, ngModel) {
+        link: function(scope, elem, attrs, ngModel) {
 
           /* istanbul ignore if */
           if (!ngModel) {
@@ -49,7 +49,7 @@
 
           elem.on('change', function(e) {
 
-            if(!e.target.files.length) {
+            if (!e.target.files.length) {
               return;
             }
 
@@ -61,8 +61,20 @@
             _onAfterValidate(e);
           });
 
-          function _readFiles () {
-            for (var i = rawFiles.length - 1; i >= 0; i--) {
+          function _readFiles() {
+            var promises = [];
+            var i;
+            for (i = rawFiles.length - 1; i >= 0; i--) {
+              // append file a new promise, that waits until resolved
+              rawFiles[i].deferredObj = $q.defer();
+              promises.push(rawFiles[i].deferredObj.promise);
+              // TODO: Make sure all promises are resolved even during file reader error, otherwise view value wont be updated
+            }
+
+            // set view value once all files are read
+            $q.all(promises).then(_setViewValue);
+
+            for (i = rawFiles.length - 1; i >= 0; i--) {
               var reader = new $window.FileReader();
               var file = rawFiles[i];
               var fileObject = {};
@@ -70,37 +82,43 @@
               fileObject.filetype = file.type;
               fileObject.filename = file.name;
               fileObject.filesize = file.size;
-
-              // append file a new promise, that waits until resolved
-              rawFiles[i].deferredObj = $q.defer();
-
+              
               _attachEventHandlers(reader, file, fileObject);
-
               reader.readAsArrayBuffer(file);
             }
           }
 
-          function _onChange (e) {
+          function _onChange(e) {
             if (attrs.onChange) {
-              scope.onChange()(e, rawFiles);
-            }
-          }
-
-          function _onAfterValidate (e) {
-            if (attrs.onAfterValidate) {
-              // wait for all promises, in rawFiles,
-              //   then call onAfterValidate
-              var promises = [];
-              for (var i = rawFiles.length - 1; i >= 0; i--) {
-                promises.push(rawFiles[i].deferredObj.promise);
+                if (scope.onChange && typeof scope.onChange() === "function") {
+                    scope.onChange()(e, rawFiles);
+                }
+                else {
+                    scope.onChange(e, rawFiles);
               }
-              $q.all(promises).then(function(){
-                scope.onAfterValidate()(e, fileObjects, rawFiles);
-              });
             }
           }
 
-          function _attachEventHandlers (fReader, file, fileObject) {
+          function _onAfterValidate(e) {
+            if (attrs.onAfterValidate) {
+                // wait for all promises, in rawFiles,
+                //   then call onAfterValidate
+                var promises = [];
+                for (var i = rawFiles.length - 1; i >= 0; i--) {
+                    promises.push(rawFiles[i].deferredObj.promise);
+                }
+                $q.all(promises).then(function () {
+                  if (scope.onAfterValidate && typeof scope.onAfterValidate() === "function"){
+                      scope.onAfterValidate()(e, fileObjects, rawFiles);
+                  }
+                  else{
+                      scope.onAfterValidate(e, fileObjects, rawFiles);
+                  }
+                });
+            }
+          }
+
+          function _attachEventHandlers(fReader, file, fileObject) {
 
             for (var i = FILE_READER_EVENTS.length - 1; i >= 0; i--) {
               var e = FILE_READER_EVENTS[i];
@@ -112,20 +130,27 @@
             fReader.onload = _readerOnLoad(fReader, file, fileObject);
           }
 
-          function _attachHandlerForEvent (eventName, handler, fReader, file, fileObject) {
-            fReader[eventName] =  function (e) {
+          function _attachHandlerForEvent(eventName, handler, fReader, file, fileObject) {
+            fReader[eventName] = function(e) {
               handler()(e, fReader, file, rawFiles, fileObjects, fileObject);
             };
           }
 
-          function _readerOnLoad (fReader, file, fileObject) {
+          function _readerOnLoad(fReader, file, fileObject) {
 
-            return function (e) {
+            return function(e) {
 
               var buffer = e.target.result;
               var promise;
 
-              fileObject.base64 = $window._arrayBufferToBase64(buffer);
+              // do not convert the image to base64 if it exceeds the maximum
+              // size to prevent the browser from freezing
+              var exceedsMaxSize = attrs.maxsize && file.size > attrs.maxsize * 1024;
+              if (attrs.doNotParseIfOversize !== undefined && exceedsMaxSize) {
+                fileObject.base64 = null;
+              } else {
+                fileObject.base64 = $window._arrayBufferToBase64(buffer);
+              }
 
               if (attrs.parser) {
                 promise = $q.when(scope.parser()(file, fileObject));
@@ -133,46 +158,48 @@
                 promise = $q.when(fileObject);
               }
 
-              promise.then(function (fileObj) {
+              promise.then(function(fileObj) {
                 fileObjects.push(fileObj);
-                _setViewValue();
-
                 // fulfill the promise here.
                 file.deferredObj.resolve();
               });
 
               if (attrs.onload) {
-                scope.onload()(e, fReader,  file, rawFiles, fileObjects, fileObject);
+                if (scope.onload && typeof scope.onload() === "function"){
+                    scope.onload()(e, fReader, file, rawFiles, fileObjects, fileObject);
+                }
+                else{
+                    scope.onload(e, rawFiles);
+                }
               }
 
             };
 
           }
 
-          function _setViewValue () {
-              var newVal = attrs.multiple ? fileObjects : fileObjects[0];
-              ngModel.$setViewValue(newVal);
-              _maxsize(newVal);
-              _minsize(newVal);
-              _maxnum(newVal);
-              _minnum(newVal);
+          function _setViewValue() {
+            var newVal = attrs.multiple ? fileObjects : fileObjects[0];
+            ngModel.$setViewValue(newVal);
+            _maxsize(newVal);
+            _minsize(newVal);
+            _maxnum(newVal);
+            _minnum(newVal);
               _maxdim(newVal);
-              _accept(newVal);
+            _accept(newVal);
           }
 
-          ngModel.$isEmpty = function (val) {
-            return !val || (angular.isArray(val)? val.length === 0 : !val.base64);
+          ngModel.$isEmpty = function(val) {
+            return !val || (angular.isArray(val) ? val.length === 0 : !val.base64);
           };
 
           // http://stackoverflow.com/questions/1703228/how-can-i-clear-an-html-file-input-with-javascript
-          scope._clearInput = function () {
+          scope._clearInput = function() {
             elem[0].value = '';
           };
 
-          scope.$watch(function () {
+          scope.$watch(function() {
             return ngModel.$viewValue;
-          }, function (val, oldVal) {
-            if (ngModel.$isEmpty(oldVal)) {return;}
+          }, function(val) {
             if (ngModel.$isEmpty(val)) {
               scope._clearInput();
             }
@@ -180,7 +207,7 @@
 
           // VALIDATIONS =========================================================
 
-          function _maxnum (val) {
+          function _maxnum(val) {
             if (attrs.maxnum && attrs.multiple && val) {
               var valid = val.length <= parseInt(attrs.maxnum);
               ngModel.$setValidity('maxnum', valid);
@@ -188,7 +215,7 @@
             return val;
           }
 
-          function _minnum (val) {
+          function _minnum(val) {
             if (attrs.minnum && attrs.multiple && val) {
               var valid = val.length >= parseInt(attrs.minnum);
               ngModel.$setValidity('minnum', valid);
@@ -196,7 +223,7 @@
             return val;
           }
 
-          function _maxsize (val) {
+          function _maxsize(val) {
             var valid = true;
 
             if (attrs.maxsize && val) {
@@ -210,8 +237,7 @@
                     break;
                   }
                 }
-              }
-              else {
+              } else {
                 valid = val.filesize <= max;
               }
               ngModel.$setValidity('maxsize', valid);
@@ -220,7 +246,7 @@
             return val;
           }
 
-          function _minsize (val) {
+          function _minsize(val) {
             var valid = true;
             var min = parseFloat(attrs.minsize) * 1000;
 
@@ -233,8 +259,7 @@
                     break;
                   }
                 }
-              }
-              else {
+              } else {
                 valid = val.filesize >= min;
               }
               ngModel.$setValidity('minsize', valid);
@@ -243,10 +268,10 @@
             return val;
           }
 
-          function _accept (val) {
+          function _accept(val) {
             var valid = true;
             var regExp, exp, fileExt;
-            if(attrs.accept){
+            if (attrs.accept) {
               exp = attrs.accept.trim().replace(/[,\s]+/gi, "|").replace(/\./g, "\\.").replace(/\/\*/g, "/.*");
               regExp = new RegExp(exp);
             }
@@ -258,7 +283,8 @@
                   fileExt = "." + file.filename.split('.').pop();
                   valid = regExp.test(file.filetype) || regExp.test(fileExt);
 
-                  if(!valid){ break; }
+                  if (!valid) {
+                    break; }
                 }
               } else {
                 fileExt = "." + val.filename.split('.').pop();
@@ -310,6 +336,7 @@
         }
       };
 
-  }]);
+    }
+  ]);
 
 })(window);
